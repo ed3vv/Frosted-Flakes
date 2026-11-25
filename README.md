@@ -87,7 +87,9 @@ v1.2 (20 Nov)
 - removed snow landing on docks
 - Rounded corners for windows
 
-
+v1.3 (24 Nov)
+- Added option for snow to fall in front of window.
+- replaced preset snow amounts with a slider
 
 ## CHANGES LATER:
 - Instead of deleting snow behind windows simply hide them
