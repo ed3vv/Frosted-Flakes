@@ -23,8 +23,8 @@ enum Cfg {
     static let dockPad: CGFloat = 4          // extra width of the Dock pile on each side of the icon area
     static let dockTopOffset: CGFloat = -1   // in physical pixels (so Retina and normal screens match); lower it if the snow floats above the Dock, raise it if it sinks in
     static let fallSpeed: CGFloat = 1.5      // falling speed multiplier (1 = original, bigger = faster)
-    static let flakesInFront = false         // some of the smallest flakes fall in front of windows, so they can reach the Dock
-    static let inFrontFraction: CGFloat = 0.4 // share of the smallest layer that falls in front (0...1)
+    static var flakesInFront = false         // some of the biggest (near) flakes fall in front of windows instead of landing on them (menu toggle)
+    static let inFrontFraction: CGFloat = 0.4 // share of the nearest (biggest) layer that falls in front (0...1)
     static let ballStartRadius: CGFloat = 3  // a new snowball starts this small
     static let ballMaxRadius: CGFloat = 28   // and stops growing at this size
     static let maxBalls = 20                 // oldest resting snowballs are removed beyond this
@@ -609,7 +609,7 @@ final class SnowScene: SKScene {
         let r = CGFloat.random(in: 0...1)
         let li = r < layerWeights[0] ? 0 : (r < layerWeights[0] + layerWeights[1] ? 1 : 2)   // far, middle, near
         let L = layers[li]
-        f.inFront = Cfg.flakesInFront && li == 0 && CGFloat.random(in: 0...1) < Cfg.inFrontFraction
+        f.inFront = Cfg.flakesInFront && li == 2 && CGFloat.random(in: 0...1) < Cfg.inFrontFraction
         f.isClump = false
         f.ignoreID = -1
         f.size = CGFloat.random(in: L.size)
@@ -1402,7 +1402,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var pauseItem: NSMenuItem!
     var lightsItem: NSMenuItem!
-    var amountItems: [NSMenuItem] = []
+    var overItem: NSMenuItem!
+    var amountSlider: NSSlider!
+    var amountLabel: NSTextField!
 
     /// One transparent overlay window with its own snow scene for a monitor
     func makeOverlay(for screen: NSScreen) {
@@ -1487,14 +1489,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let amount = NSMenuItem(title: "Snow Amount", action: nil, keyEquivalent: "")
         let sub = NSMenu()
-        for (title, n) in [("Light", 12), ("Medium", 24), ("Heavy", 48), ("Snowstorm", 96)] {
-            let it = NSMenuItem(title: title, action: #selector(setAmount(_:)), keyEquivalent: "")
-            it.target = self
-            it.tag = n
-            it.state = (CGFloat(n) == Cfg.flakesPerSecond) ? .on : .off
-            sub.addItem(it)
-            amountItems.append(it)
-        }
+        // Slider for any amount from 1 to 100 flakes per second
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 28))
+        amountLabel = NSTextField(labelWithString: "")
+        amountLabel.frame = NSRect(x: 14, y: 5, width: 40, height: 17)
+        amountLabel.alignment = .right
+        amountSlider = NSSlider(value: Double(Cfg.flakesPerSecond), minValue: 1, maxValue: 100,
+                                target: self, action: #selector(amountSliderMoved(_:)))
+        amountSlider.frame = NSRect(x: 60, y: 4, width: 146, height: 20)
+        amountSlider.isContinuous = true
+        box.addSubview(amountLabel)
+        box.addSubview(amountSlider)
+        let sliderItem = NSMenuItem()
+        sliderItem.view = box
+        sub.addItem(sliderItem)
+        amountLabel.stringValue = "\(Int(Cfg.flakesPerSecond))"
         amount.submenu = sub
         menu.addItem(amount)
 
@@ -1502,6 +1511,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lightsItem.target = self
         lightsItem.state = (scenes.first?.lightsOn ?? false) ? .on : .off
         menu.addItem(lightsItem)
+
+        overItem = NSMenuItem(title: "Snow Over Windows", action: #selector(toggleOverWindows), keyEquivalent: "o")
+        overItem.target = self
+        overItem.state = Cfg.flakesInFront ? .on : .off
+        menu.addItem(overItem)
 
         let clear = NSMenuItem(title: "Clear Snow", action: #selector(clearSnow), keyEquivalent: "c")
         clear.target = self
@@ -1525,9 +1539,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pauseItem.title = paused ? "Resume Snow" : "Pause Snow"
     }
 
-    @objc func setAmount(_ sender: NSMenuItem) {
-        Cfg.flakesPerSecond = CGFloat(sender.tag)
-        for it in amountItems { it.state = (it === sender) ? .on : .off }
+    @objc func amountSliderMoved(_ sender: NSSlider) {
+        let n = max(1, min(100, Int(sender.doubleValue.rounded())))
+        Cfg.flakesPerSecond = CGFloat(n)
+        amountLabel.stringValue = "\(n)"
     }
 
     @objc func clearSnow() { for sc in scenes { sc.clearAll() } }
@@ -1557,6 +1572,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let on = !(scenes.first?.lightsOn ?? false)
         for sc in scenes { sc.setLights(on) }
         lightsItem.state = on ? .on : .off
+    }
+
+    @objc func toggleOverWindows() {
+        Cfg.flakesInFront.toggle()
+        overItem.state = Cfg.flakesInFront ? .on : .off
     }
 
     @objc func screensChanged() {
